@@ -13,38 +13,52 @@ Detroit Choices, a small food business, was managing incoming orders manually ac
 - inconsistent customer communication
 - manual effort duplicated across admin tasks
 
-The goal was to replace this with a lightweight, event-driven automation system using accessible tools — without enterprise software overhead.
+The goal was to replace this with a reliable, event-driven automation system using accessible tools — without enterprise software overhead.
 
 ---
 
 ## Solution Overview
 
-The system connects a customer-facing order form to a structured backend and a series of automated workflows that handle internal coordination and customer communication end-to-end.
+The system connects a customer-facing order form to a structured backend and a series of automated workflows that handle payment, storage, internal coordination, and customer communication end-to-end.
 
 **Order lifecycle:**
 
-1. Customer submits order on the Detroit Choices website
-2. Website (hosted on Replit) stores order data in PostgreSQL
-3. Webhook fires with structured order payload into Zapier
-4. Zapier creates a CRM record in Google Sheets
-5. Admin receives Telegram alert + internal email notification
-6. Customer receives an automated order confirmation email
-7. As admin updates order status, automated status emails go to the customer:
-   - Order Processed
-   - In Preparation
-   - Ready for Pickup
-8. After pickup is confirmed, a 24–48 hour delay triggers a thank-you email with a feedback/review link
+1. Customer submits an order on the Detroit Choices website (hosted on Replit)
+2. Customer completes payment through Stripe before pickup
+3. Replit backend stores the confirmed order in PostgreSQL
+4. Backend fires a webhook to Zapier
+5. Zapier creates a CRM record in Google Sheets, sends a Telegram admin alert, and sends the customer an order confirmation email
+6. Admin manages fulfillment exclusively through the **Telegram admin dashboard** using inline action buttons:
+   - Order Being Processed
+   - Order Ready for Pickup
+   - Order Picked Up
+7. Each button press calls back to the Replit backend, which updates PostgreSQL and fires a status webhook to Zapier
+8. Zapier auto-syncs Google Sheets and sends the appropriate customer status email
+9. When the admin marks an order as **Picked Up**, the backend sets `picked_up_at` and fires a final webhook
+10. Zapier waits 24 hours, then sends a thank-you email with a feedback/review link
 
 ---
 
 ## Architecture
 
 ```
-Customer → Replit Web App → PostgreSQL → Webhook → Zapier
-                                                       ├── Google Sheets CRM
-                                                       ├── Telegram Admin Alert
-                                                       ├── Internal Email
-                                                       └── Customer Emails (confirmation + status + thank-you)
+Customer → Replit Web App → Stripe Payment → PostgreSQL
+                                                  ↓
+                                           Webhook → Zapier
+                                                  ↓
+                              ┌───────────────────┼────────────────────┐
+                        Google Sheets CRM   Telegram Admin     Customer Email
+                              (auto-synced)    Dashboard        (confirmation)
+                                               ↓
+                              Admin clicks status button (Telegram)
+                                               ↓
+                              Replit Backend → PostgreSQL update
+                                               ↓
+                              Webhook → Zapier → Google Sheets sync
+                                               ↓
+                                        Customer Status Email
+                                               ↓
+                              [picked_up] → 24hr delay → Thank-You Email
 ```
 
 See the full Mermaid diagram in [architecture/system-architecture.md](architecture/system-architecture.md).
@@ -57,11 +71,12 @@ See the full Mermaid diagram in [architecture/system-architecture.md](architectu
 |---|---|
 | Web Application | Replit |
 | Database | PostgreSQL |
+| Payments | Stripe |
 | Secrets Management | Replit Environment Variables |
-| Event Trigger | Webhooks |
+| Event Triggers | Webhooks (order intake + status updates) |
 | Automation Orchestration | Zapier |
-| CRM | Google Sheets |
-| Admin Notifications | Telegram Bot |
+| CRM (auto-synced) | Google Sheets |
+| Admin Control Surface | Telegram Admin Dashboard (inline buttons) |
 | Customer Emails | Email via Zapier |
 | Documentation / Portfolio | Git + GitHub |
 
@@ -98,7 +113,7 @@ Detroit-Choices-Automation-Case-Study/
 │
 └── screenshots/
     ├── detroit_choices_sys_arch.png   — system architecture diagram
-    └── tg_admin_portal.gif            — Telegram admin portal demo
+    └── tg_admin_portal.gif            — Telegram admin dashboard demo
 ```
 
 ---
@@ -109,9 +124,9 @@ Detroit-Choices-Automation-Case-Study/
 
 ![System Architecture](screenshots/detroit_choices_sys_arch.png)
 
-**Telegram Admin Portal**
+**Telegram Admin Dashboard**
 
-![Telegram Admin Portal](screenshots/tg_admin_portal.gif)
+![Telegram Admin Dashboard](screenshots/tg_admin_portal.gif)
 
 ---
 
@@ -121,11 +136,11 @@ This project demonstrates a practical, production-deployed automation system bui
 
 It shows:
 
-- **systems thinking** — connecting web application, database, event triggers, and multi-channel communications into a coherent workflow
-- **implementation ability** — the system was fully designed and deployed, not just theorized
-- **automation architecture** — event-driven design using webhooks and Zapier as the orchestration layer
-- **CRM and operations design** — lightweight Google Sheets CRM integrated into an automated status lifecycle
-- **customer lifecycle management** — structured communication from order confirmation through post-pickup follow-up
+- **systems thinking** — connecting payment, database, backend, event triggers, and multi-channel communications into a coherent pipeline
+- **implementation ability** — the system was fully designed and deployed, not theorized
+- **event-driven architecture** — backend webhook events drive all downstream automation; no manual CRM updates required
+- **admin UX design** — Telegram inline buttons as the sole fulfillment control surface, keeping admin workflow entirely in one tool
+- **customer lifecycle management** — automated communication from order confirmation through post-pickup thank-you
 
 The architecture is deliberately lightweight and accessible, demonstrating how practical automation can be built without expensive enterprise platforms.
 

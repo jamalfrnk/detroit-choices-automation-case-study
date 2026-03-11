@@ -2,9 +2,14 @@
 
 ## Architecture Overview
 
-The Detroit Choices Automation System is designed as an event-driven workflow architecture connecting a web application, database storage, automation workflows, and communication services.
+The Detroit Choices Automation System is designed as an event-driven workflow architecture connecting a Replit-hosted web application, Stripe payment processing, PostgreSQL order database, Telegram admin dashboard, Zapier automation, auto-synced Google Sheets CRM, and customer email communications.
 
-The system ensures that customer orders move through a structured lifecycle from submission to fulfillment and post-order feedback.
+The system operates through two distinct webhook-driven flows:
+
+1. **Order intake flow** — triggered after Stripe payment completes and the order is written to PostgreSQL
+2. **Status update flow** — triggered by the Replit backend each time the admin acts through the Telegram admin dashboard
+
+PostgreSQL is the **system of record**. Google Sheets is a **downstream auto-synced view**. The Telegram admin dashboard is the **sole admin control surface**.
 
 ---
 
@@ -12,87 +17,107 @@ The system ensures that customer orders move through a structured lifecycle from
 
 ### Website Application
 
-The Detroit Choices website was built and deployed using **Replit** as the development and hosting environment.
+The Detroit Choices website is built and hosted on **Replit**.
 
-The application includes:
+- provides the customer-facing order submission form
+- runs the backend application logic
+- handles Stripe payment confirmation before writing orders to the database
+- fires webhook events to Zapier on both order creation and status changes
+- exposes callback endpoints for Telegram admin dashboard button actions
+- stores all credentials and API keys as Replit Secrets (environment variables)
 
-- customer order submission form
-- backend logic for order processing
-- environment variables used for storing API keys and service credentials
+---
+
+### Stripe Payment Processing
+
+Stripe handles customer payment as part of the order intake flow.
+
+- the customer completes payment through Stripe before the order is finalized
+- the backend writes the order to PostgreSQL only after payment is confirmed
+- Stripe payment completion is not the trigger for the thank-you email — that is triggered by the `picked_up` status event
 
 ---
 
 ### PostgreSQL Database
 
-Incoming order data is stored in a **PostgreSQL database** connected to the website backend.
+PostgreSQL is the **primary system of record** for the automation system.
 
-The database acts as the primary data store for:
+The `orders` table stores:
 
 - customer information
-- order details
-- timestamps
-- order status fields
+- order details and quantities
+- Stripe payment reference
+- order status (`new`, `processing`, `ready_for_pickup`, `picked_up`)
+- timestamps (`submitted_at`, `status_updated_at`, `picked_up_at`)
 
-The database ensures that all order data is securely stored and structured before being processed by automation workflows.
+All status changes are written to PostgreSQL by the Replit backend before any downstream automation is triggered. Zapier and Google Sheets reflect the database state — they do not control it.
 
 ---
 
-### Webhook Trigger
+### Webhook Events
 
-When an order is submitted, the system generates a **webhook event** that sends order data into the automation pipeline.
+The backend fires two types of webhook events to Zapier:
 
-The webhook pulls structured order information from the database and sends it to Zapier for workflow processing.
+1. **Order intake webhook** — fires after Stripe payment complete and order written to PostgreSQL
+2. **Status update webhook** — fires after each admin button press updates PostgreSQL
+
+Webhooks carry structured JSON payloads containing the order state at the time of the event.
 
 ---
 
 ### Zapier Automation Engine
 
-Zapier acts as the central orchestration layer for the automation system.
+Zapier is the central automation orchestration layer.
 
-Zapier workflows handle:
+**Zap 1 — Order Intake** (webhook trigger):
+- receives incoming order webhook
+- creates a Google Sheets CRM row
+- sends Telegram admin alert with order details and action buttons
+- sends customer order confirmation email
 
-- webhook intake
-- order data parsing
-- CRM record creation
-- internal notifications
-- customer messaging
-- post-order follow-up
+**Zap 2 — Status Updates** (webhook trigger from backend):
+- receives status webhook from Replit backend
+- auto-syncs the Google Sheets CRM row with updated status
+- routes to appropriate customer email based on status value
+- on `picked_up`: waits 24 hours, then sends thank-you + feedback email
+
+---
+
+### Telegram Admin Dashboard
+
+The Telegram admin dashboard is the **sole admin control surface** for fulfillment management.
+
+When a new order arrives, the admin receives an alert in Telegram with the order details and three inline action buttons:
+
+- **Order Being Processed** → backend sets `order_status = 'processing'`
+- **Order Ready for Pickup** → backend sets `order_status = 'ready_for_pickup'`
+- **Order Picked Up** → backend sets `order_status = 'picked_up'` and records `picked_up_at`
+
+Each button press sends a callback to the Replit backend. The backend updates PostgreSQL and fires a status webhook to Zapier. The admin never manually edits Google Sheets or any other system.
 
 ---
 
 ### Google Sheets CRM
 
-A Google Sheets document functions as a lightweight CRM system.
+Google Sheets functions as a **lightweight, auto-synced downstream CRM view**.
 
-The CRM stores structured order data and allows administrators to:
+- populated by Zapier immediately on order intake
+- updated by Zapier on each status change event
+- provides a readable log of all orders and current statuses
+- is written to exclusively by Zapier — it does not trigger any automation
 
-- track incoming orders
-- update order status
-- manage operational workflows
-
-Zapier monitors changes in this sheet to trigger status update emails to customers.
-
----
-
-### Internal Notifications
-
-Administrators are notified when orders are received through:
-
-- Telegram bot alerts
-- internal email notifications
-
-These alerts ensure the team is immediately aware of new orders.
+Google Sheets is a **visibility layer**, not a control surface.
 
 ---
 
 ### Customer Communication Automation
 
-Customers receive automated emails throughout the order lifecycle:
+Customers receive automated emails managed by Zapier across the full order lifecycle:
 
-- order confirmation
-- order processing updates
-- ready-for-pickup notification
-- post-order thank-you message
+- **Order confirmation** — immediately after order intake webhook
+- **Order processing** — when `order_status = 'processing'`
+- **Ready for pickup** — when `order_status = 'ready_for_pickup'`
+- **Thank-you + feedback** — 24 hours after `order_status = 'picked_up'`
 
 ---
 
@@ -103,42 +128,42 @@ flowchart TD
 
 A[Customer Places Order] --> B[Website Order Form]
 B --> C[Replit Web Application]
-C --> D[PostgreSQL Order Database]
+C --> D[Stripe Payment Completed]
+D --> E[PostgreSQL Order Database]
 
-D --> E[Webhook Trigger]
-E --> F[Zapier Automation Workflow]
+E --> F[Webhook Trigger to Zapier]
+F --> G[Zapier Automation Workflow]
 
-F --> G[Create CRM Entry]
-G --> H[Google Sheets CRM]
+G --> H[Create or Update Google Sheets CRM]
+H --> I[Google Sheets CRM]
 
-F --> I[Send Internal Admin Alert]
-I --> J[Telegram Admin Bot]
+G --> J[Send Telegram Admin Alert]
+J --> K[Telegram Admin Dashboard]
 
-F --> K[Send Internal Email Notification]
-K --> L[Business Owner]
+G --> L[Send Initial Customer Order Email]
+L --> M[Customer]
 
-F --> M[Send Client Order Confirmation Email]
-M --> N[Customer]
+K --> N[Admin Clicks Order Being Processed]
+K --> O[Admin Clicks Order Ready for Pickup]
+K --> P[Admin Clicks Order Picked Up]
 
-H --> O[Order Status Tracking]
+N --> Q[Replit Backend Updates order_status to processing]
+O --> R[Replit Backend Updates order_status to ready_for_pickup]
+P --> S[Replit Backend Updates order_status to picked_up and sets picked_up_at]
 
-O --> P[Status Updated by Admin]
-P --> Q[Zapier Status Change Trigger]
+Q --> T[Webhook Status Event to Zapier]
+R --> T
+S --> T
 
-Q --> R[Send Client Status Email - Order Processed]
-R --> N
+T --> U[Auto-Update Google Sheets CRM]
+U --> I
 
-Q --> S[Send Client Status Email - In Preparation]
-S --> N
+T --> V[Send Customer Status Email]
+V --> M
 
-Q --> T[Send Client Status Email - Ready for Pickup]
-T --> N
+S --> W[Delay 24 Hours in Zapier]
+W --> X[Send Thank You Email + Feedback Request]
+X --> M
 
-Q --> U[Pickup Confirmed]
-U --> V[Delay 24-48 Hours]
-
-V --> W[Send Thank You Email + Feedback Request]
-W --> N
-
-W --> X[Feedback Form or Review Link]
+X --> Y[Feedback Form or Review Link]
 ```
