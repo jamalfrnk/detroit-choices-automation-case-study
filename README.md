@@ -113,7 +113,8 @@ Detroit-Choices-Automation-Case-Study/
 │
 └── screenshots/
     ├── detroit_choices_sys_arch.png   — system architecture diagram
-    └── tg_admin_portal.gif            — Telegram admin dashboard demo
+    ├── tg_admin_portal.gif            — Telegram admin dashboard demo
+    └── photo_1 – photo_7 (2026-03-16) — Zapier workflow screenshots
 ```
 
 ---
@@ -127,6 +128,16 @@ Detroit-Choices-Automation-Case-Study/
 **Telegram Admin Dashboard**
 
 ![Telegram Admin Dashboard](screenshots/tg_admin_portal.gif)
+
+**Zapier Workflow Screenshots**
+
+![Zapier Workflow 1](screenshots/photo_1_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 2](screenshots/photo_2_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 3](screenshots/photo_3_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 4](screenshots/photo_4_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 5](screenshots/photo_5_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 6](screenshots/photo_6_2026-03-16_08-13-24.jpg)
+![Zapier Workflow 7](screenshots/photo_7_2026-03-16_08-13-24.jpg)
 
 ---
 
